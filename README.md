@@ -59,12 +59,21 @@ npm run dev -- --hostname 127.0.0.1 --port 3010
 
 浏览器访问 `http://127.0.0.1:3010/`。
 
+## 公网体验
+
+当前版本已部署到阿里云服务器，可直接访问：
+
+`http://47.93.220.66:8082/`
+
+该地址使用服务器公网 IP 和 8082 端口，暂未配置自有域名和 HTTPS。公网环境中的结账仍然是 `Mock Checkout`，不会产生真实支付。
+
 ## 可选模型配置
 
 ```dotenv
 DASHSCOPE_API_KEY=your-api-key
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 DASHSCOPE_MODEL=qwen3.8-max
+DASHSCOPE_MODEL_OPTIONS=qwen3.8-max,qwen3-max,qwen-plus,qwen-flash
 COMMERCE_SANDBOX_SECRET=replace-with-a-random-sandbox-secret
 ```
 
@@ -101,7 +110,7 @@ npm run build
 npm run test:e2e
 ```
 
-当前验证基线为 30 个 Vitest 单元测试和 9 个 Playwright 端到端场景。浏览器测试还会在 1440px、1024px、390px 三种视口检查七个工作区是否发生横向溢出或面板覆盖。
+当前验证基线为 32 个 Vitest 单元测试和 10 个 Playwright 端到端场景。浏览器测试还会在 1440px、1024px、390px 三种视口检查七个工作区是否发生横向溢出或面板覆盖，并验证模型切换和刷新保持。
 
 ## 目录
 
