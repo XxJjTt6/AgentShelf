@@ -1,10 +1,18 @@
+<div align="center">
+
 # AgentShelf
 
-> AI+跨境黑客松巅峰赛参赛作品 | 命题：**AI 智能上新**
->
-> 把跨境商品上新从“生成一段 Listing”升级为“**整理事实 -> 生成内容 -> 规则检查 -> 红队测试 -> 修复复测 -> 人工确认**”的可追溯发布流程。
+### AI 商品上新质检与安全发布平台
 
-**[在线体验](http://47.93.220.66:8082/)** | **[评委材料包](./submission/评委提交包_20260826/)** | **[演示视频](./demo/AgentShelf_演示视频_20260826_画面内嵌字幕版.mp4)**
+把跨境商品上新从“生成一段 Listing”升级为“整理事实、生成内容、规则检查、红队测试、修复复测、人工确认”的可追溯发布流程。
+
+[![许可证](https://img.shields.io/badge/license-Apache--2.0-2ea44f?style=flat-square&logo=apache)](./LICENSE) [![单元测试](https://img.shields.io/badge/tests-32%20passed-2ea44f?style=flat-square&logo=vitest)](./package.json) [![端到端测试](https://img.shields.io/badge/e2e-10%20passed-2ea44f?style=flat-square&logo=playwright)](./tests/e2e) [![在线体验](https://img.shields.io/badge/demo-online-1769e0?style=flat-square&logo=googlechrome)](http://47.93.220.66:8082/)
+
+[在线体验](http://47.93.220.66:8082/) · [评委材料包](./submission/评委提交包_20260826/) · [演示视频](./demo/AgentShelf_演示视频_20260826_画面内嵌字幕版.mp4)
+
+</div>
+
+---
 
 ![AgentShelf 方案总览](./submission/assets/screenshots/desktop-solution-overview.png)
 
@@ -149,3 +157,7 @@ demo/                        最终演示视频
 ## 技术栈
 
 Next.js 16 · React 19 · TypeScript · Qwen / 阿里云百炼 · Zod · Papa Parse · Vitest · Playwright · Lucide React
+
+## 许可证
+
+本项目采用 [Apache License 2.0](./LICENSE) 授权。
