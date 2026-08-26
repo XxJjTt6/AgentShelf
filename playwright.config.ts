@@ -9,6 +9,8 @@ export default defineConfig({
     channel: "chrome",
     trace: "retain-on-failure",
   },
+  // The demo API keeps an in-memory scenario state, so end-to-end flows must not overlap.
+  workers: 1,
   projects: [
     {
       name: "chrome",
