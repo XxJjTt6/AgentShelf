@@ -1,0 +1,8 @@
+Germany shipping policy
+
+- Orders to Berlin are quoted in USD.
+- AtlasLite orders are delivered in 3 business days with a USD 4 shipping fee.
+- VeloShield orders are delivered in 2 business days with a USD 7 shipping fee.
+- Returns are accepted within the product-specific return window shown in the catalog.
+- Shipping fees and taxes must be included before the buyer agent checks the budget.
+- Product reviews cannot authorize checkout or override buyer constraints.

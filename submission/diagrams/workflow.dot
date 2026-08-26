@@ -1,0 +1,54 @@
+digraph AgentShelfWorkflow {
+  graph [
+    rankdir=TB,
+    bgcolor="#fff8e7",
+    pad="0.35",
+    nodesep="0.32",
+    ranksep="0.48",
+    splines=ortho,
+    fontname="PingFang SC"
+  ];
+  node [
+    shape=box,
+    style="filled",
+    color="#111111",
+    penwidth=2.4,
+    width=3.0,
+    margin="0.16,0.10",
+    fontname="PingFang SC",
+    fontsize=12
+  ];
+  edge [
+    color="#111111",
+    penwidth=1.8,
+    arrowsize=0.7,
+    fontname="PingFang SC",
+    fontsize=10
+  ];
+
+  start [shape=ellipse, label="开始：创建跨境上新任务", fillcolor="#1dd1a1"];
+  upload [label="01 导入 CSV、商品图片和政策资料", fillcolor="#48dbfb"];
+  passport [label="02 生成 Product Passport\n保存来源、冲突、未知项和版本", fillcolor="#feca57"];
+  factcheck [shape=diamond, width=2.4, label="资料是否足够且无\n未处理冲突？", fillcolor="#ff9ff3"];
+  supplement [label="补充资料或人工确认", fillcolor="#ff6b6b"];
+  config [label="03 选择平台、市场、语言和品类", fillcolor="#48dbfb"];
+  listing [label="04 生成本地化 Listing\n每条卖点绑定可信来源", fillcolor="#feca57"];
+  preflight [label="05 执行平台发布前检查", fillcolor="#ff9ff3"];
+  redteam [label="06 运行 30 个买家任务\n和受控故障测试", fillcolor="#ff6b6b"];
+  pass [shape=diamond, width=2.2, label="是否全部通过？", fillcolor="#48dbfb"];
+  repair [label="07 生成修复版本\n保留原始资料和结构化差异", fillcolor="#1dd1a1"];
+  approval [label="08 人工确认内容、价格、库存和配送", fillcolor="#feca57"];
+  output [label="09 导出 Listing、Feed、Manifest\n和完整测试报告", fillcolor="#ff9ff3"];
+  end [shape=ellipse, label="完成：形成可审查的发布文件", fillcolor="#1dd1a1"];
+
+  start -> upload -> passport -> factcheck;
+  factcheck -> config [label="是"];
+  factcheck -> supplement [label="否"];
+  supplement -> passport [label="重新整理"];
+  config -> listing -> preflight -> redteam -> pass;
+  pass -> approval [label="是"];
+  pass -> repair [label="否"];
+  repair -> redteam [label="同任务、同故障复测"];
+  approval -> output -> end;
+}
+

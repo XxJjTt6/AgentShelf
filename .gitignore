@@ -1,0 +1,15 @@
+node_modules/
+.next/
+coverage/
+playwright-report/
+test-results/
+output/
+.env
+.env.local
+.env.*.local
+!.env.example
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
+.learnings/
+tmp/
