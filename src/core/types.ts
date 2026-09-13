@@ -142,6 +142,7 @@ export interface RunReport {
   summary: string;
   model: string;
   generatedAt: string;
+  harness?: import("./agent-harness").HarnessTrace;
 }
 
 export interface ModelAudit {

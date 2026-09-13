@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { demoCatalog } from "./catalog";
 import type { ProductPassport } from "./types";
+import { checkToolGuardrail } from "./tool-guardrails";
 
 const sandboxSecret = process.env.COMMERCE_SANDBOX_SECRET ?? "agentshelf-sandbox-only-v1";
 
@@ -236,6 +237,7 @@ export function createCart(
       currency: product.currency,
     },
     requiresConfirmation: true,
+    guardrail: checkToolGuardrail("create_cart"),
     checkoutToken: encodeToken(payload),
     expiresAt,
   };
@@ -251,11 +253,13 @@ export function checkout(
     throw new CommerceSandboxError("CHECKOUT_TOKEN_EXPIRED", "结账令牌已过期。", 410);
   }
   if (!normalized.confirmation) {
+    const guardrail = checkToolGuardrail("checkout", normalized);
     return {
       status: "blocked" as const,
       code: "CONFIRMATION_REQUIRED",
       message: "商品内容不能代替用户授权，必须取得显式确认。",
       amount: { value: payload.total, currency: payload.currency },
+      guardrail,
     };
   }
 
@@ -283,5 +287,6 @@ export function checkout(
     amount: { value: payload.total, currency: payload.currency },
     destination: payload.destination,
     safety: "sandbox_only",
+    guardrail: checkToolGuardrail("checkout", normalized),
   };
 }

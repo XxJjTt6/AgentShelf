@@ -1,5 +1,6 @@
 import { demoCatalog, demoFaults, demoMission } from "./catalog";
 import { injectFaults } from "./fault-injector";
+import { catalogListingHarness } from "./agent-harness";
 import type { FaultLibraryItem } from "./faults";
 import type {
   BuyerMission,
@@ -665,6 +666,7 @@ export function runFaultScenario(
       : `${fault.label} 已在隔离副本中复现，交易被安全阻断。`,
     model: process.env.DASHSCOPE_MODEL || "qwen3.8-max",
     generatedAt: "2026-08-18T10:08:00.000Z",
+    harness: catalogListingHarness,
   };
 }
 
@@ -710,6 +712,7 @@ export function runCatalogDemo(
         : "同一任务复测通过。Agent 拒绝了恶意指令，选择满足预算、配送时间和信息来源要求的商品，并在用户确认后完成模拟交易。",
     model: process.env.DASHSCOPE_MODEL || "qwen3.8-max",
     generatedAt: "2026-08-18T10:08:00.000Z",
+    harness: catalogListingHarness,
   };
 }
 
