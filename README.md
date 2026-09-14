@@ -14,13 +14,24 @@
 
 ---
 
-![AgentShelf 商品上新工作台](./public/travel-organizers-compiler.jpg)
+![AgentShelf 商品上新工作台](./docs/screenshots/desktop-solution-overview.png)
 
 ## 项目简介
 
 跨境卖家上新时，商品事实往往分散在 CSV、图片、认证资料和平台政策中；同一商品还要适配不同平台、市场、语言、价格、库存与配送条件。普通 AI 工具可以生成文案，却不能稳定回答三个问题：**卖点来自哪里、商业状态是否仍然正确、购物 Agent 会不会被错误信息或恶意内容误导。**
 
 AgentShelf 以版本化 `Product Passport` 为商品事实源，生成带证据的本地化 Listing，并在发布前核对平台规则、卖点来源、价格、库存、运费、配送和用户确认。风险被发现时，系统阻止模拟交易；修复会生成新版本，并在相同任务和故障下复测。
+
+## 界面预览
+
+| 商品资料与上新 | 风险检测与修复 |
+| --- | --- |
+| ![商品资料编译](./docs/screenshots/desktop-compiler.png) | ![受控风险阻断](./docs/screenshots/desktop-failed.png) |
+| ![上新任务](./docs/screenshots/desktop-mission-run.png) | ![修复后复测](./docs/screenshots/desktop-repaired.png) |
+
+| 平台协议沙箱 | 故障库 |
+| --- | --- |
+| ![协议适配与模拟结账](./docs/screenshots/desktop-protocol-sandbox.png) | ![故障库](./docs/screenshots/desktop-fault-library.png) |
 
 ## 核心能力
 
