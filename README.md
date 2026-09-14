@@ -69,6 +69,8 @@ CSV / 图片 / 政策资料
 
 ## Agent 技术架构
 
+![AgentShelf 完整技术架构](./docs/architecture/agent-shelf-architecture.png)
+
 ```text
 目录 Agent -> 上架 Agent -> 风险 Agent -> 发布 Agent
       |            |            |            |

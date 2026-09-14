@@ -1,0 +1,80 @@
+digraph AgentShelfArchitecture {
+  graph [rankdir=LR, bgcolor="#FFFFFF", fontname="PingFang SC", fontsize=18, pad="0.25", nodesep="0.32", ranksep="0.62", splines=ortho, compound=true, labelloc="t", label="AgentShelf 端到端 Agent 安全上新架构"];
+  node [shape=box, style="rounded,filled", fontname="PingFang SC", fontsize=12, margin="0.16,0.11", color="#CBD5E1", penwidth=1.2];
+  edge [fontname="PingFang SC", fontsize=9, color="#64748B", penwidth=1.1, arrowsize=0.7];
+
+  subgraph cluster_input {
+    label="输入与事实层"; color="#BAE6FD"; bgcolor="#F0F9FF"; style="rounded"; penwidth=1.5;
+    csv [label="CSV 商品资料", fillcolor="#DBEAFE"];
+    image [label="商品图片\nOCR / 图文建议", fillcolor="#DBEAFE"];
+    policy [label="平台政策\n配送 / 退货 / 授权", fillcolor="#DBEAFE"];
+    mission [label="用户任务\n预算 / 目的国 / 属性", fillcolor="#DBEAFE"];
+    importer [label="资料编译器\nSchema 校验 · 来源归一化", fillcolor="#BFDBFE", color="#60A5FA"];
+    passport [label="Product Passport\n事实 · 来源 · 冲突 · 版本", fillcolor="#93C5FD", color="#2563EB", penwidth=1.8];
+    csv -> importer; image -> importer; policy -> importer; importer -> passport;
+  }
+
+  subgraph cluster_agents {
+    label="Agent 控制平面"; color="#C4B5FD"; bgcolor="#F5F3FF"; style="rounded"; penwidth=1.5;
+    orchestrator [label="任务编排器\n状态机 · runId · 版本锁", fillcolor="#DDD6FE", color="#7C3AED", penwidth=1.8];
+    harness [label="Agent Harness\n能力白名单 · 步骤预算\n发布闸门 · 工具授权", fillcolor="#C4B5FD", color="#6D28D9", penwidth=2.0];
+    catalog_agent [label="目录 Agent\n读取事实 / 证据", fillcolor="#EDE9FE"];
+    listing_agent [label="上架 Agent\n结构化 Listing 草稿", fillcolor="#EDE9FE"];
+    risk_agent [label="风险 Agent\n红队 / 事实 / 商业状态", fillcolor="#EDE9FE"];
+    release_agent [label="发布 Agent\n人工确认后导出", fillcolor="#EDE9FE"];
+    orchestrator -> harness;
+    harness -> catalog_agent [label="read-catalog"];
+    harness -> listing_agent [label="draft-listing"];
+    harness -> risk_agent [label="audit"];
+    harness -> release_agent [label="export gate"];
+  }
+
+  subgraph cluster_ai {
+    label="模型与规则层"; color="#FDE68A"; bgcolor="#FFFBEB"; style="rounded"; penwidth=1.5;
+    qwen [label="Qwen / 阿里云百炼\n图文理解 · 结构建议", fillcolor="#FEF3C7", color="#D97706"];
+    rules [label="确定性规则引擎\n价格 · 库存 · 配送 · 平台门禁", fillcolor="#FDE68A", color="#B45309", penwidth=1.8];
+    verifier [label="Verifier\n证据覆盖 · 结构化输出\nTripwire / Guardrail", fillcolor="#FBBF24", color="#B45309", penwidth=1.8];
+    qwen -> listing_agent [style=dashed, label="建议"];
+    qwen -> risk_agent [style=dashed, label="语义复核"];
+    rules -> verifier; verifier -> harness [label="allow / block"];
+  }
+
+  subgraph cluster_security {
+    label="安全与互操作层"; color="#FDA4AF"; bgcolor="#FFF1F2"; style="rounded"; penwidth=1.5;
+    guard [label="工具 Guardrail\n调用前 / 调用后校验\n确认 · scope · 版本", fillcolor="#FECDD3", color="#E11D48", penwidth=1.8];
+    mcp [label="MCP Gateway\nJSON-RPC · Bearer / JWT\n限流 · 请求体限制", fillcolor="#FDA4AF", color="#BE123C", penwidth=1.8];
+    a2a [label="A2A Agent Card\n能力发现 · 技能声明", fillcolor="#FFE4E6", color="#E11D48"];
+    guard -> mcp; guard -> a2a [style=dashed, label="能力声明"];
+  }
+
+  subgraph cluster_commerce {
+    label="商业沙箱"; color="#86EFAC"; bgcolor="#F0FDF4"; style="rounded"; penwidth=1.5;
+    search [label="搜索 / 商品详情", fillcolor="#DCFCE7"];
+    shipping [label="配送报价\n目的国 / 退货", fillcolor="#DCFCE7"];
+    cart [label="签名购物车\nHMAC · 版本 · 过期时间", fillcolor="#BBF7D0", color="#16A34A"];
+    checkout [label="确认式模拟结账\npayment = not_captured", fillcolor="#86EFAC", color="#15803D", penwidth=1.8];
+    search -> shipping -> cart -> checkout;
+  }
+
+  subgraph cluster_observe {
+    label="审计与交付层"; color="#A5B4FC"; bgcolor="#EEF2FF"; style="rounded"; penwidth=1.5;
+    trace [label="Agent Trace\nworkflow · agent · tool · guardrail", fillcolor="#C7D2FE", color="#4F46E5"];
+    eval [label="Agent Eval\n阻断 · 确认 · 证据 · 风险覆盖", fillcolor="#A5B4FC", color="#4338CA"];
+    human [label="运营人员\n内容 / 价格 / 库存 / 配送确认", fillcolor="#DDD6FE", color="#7C3AED", penwidth=1.8];
+    artifacts [label="发布证据\nListing · Feed · 报告 · 批准记录", fillcolor="#C7D2FE", color="#4F46E5"];
+    trace -> eval; eval -> human; human -> artifacts;
+  }
+
+  passport -> orchestrator [label="versioned facts"];
+  mission -> orchestrator;
+  catalog_agent -> passport [label="读取", color="#7C3AED"];
+  listing_agent -> rules [label="平台检查"];
+  risk_agent -> guard [label="风险门控"];
+  release_agent -> human [label="request approval"];
+  guard -> checkout [label="authorized only", color="#E11D48"];
+  cart -> verifier [label="state check", color="#B45309"];
+  checkout -> verifier [label="result check", color="#B45309"];
+  harness -> trace [label="run spans", color="#4F46E5"];
+  guard -> trace [label="tool / guardrail spans", color="#4F46E5"];
+  artifacts -> trace [style=dashed, label="evidence link", color="#4F46E5"];
+}
