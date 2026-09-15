@@ -4,7 +4,7 @@ test("solution overview explains the business value and opens the working flow",
   await page.goto("/");
   await page.getByRole("button", { name: /方案总览/ }).click();
 
-  await expect(page.getByRole("heading", { name: "跨境商品上新的 Agent 安全发布平台" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "跨境商品上新的 智能体 安全发布平台" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "从资料到安全发布" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Qwen 与固定规则协作" })).toBeVisible();
   await expect(page.getByLabel("已实现的验证能力").getByText("30", { exact: true })).toBeVisible();
@@ -30,6 +30,7 @@ test("用户可以选择模型，并在刷新后保留选择", async ({ page }) 
   const modelSelector = page.getByLabel("选择 AI 模型");
   await expect(modelSelector).toHaveValue(/qwen/);
   await modelSelector.selectOption("qwen-plus");
+  await page.locator(".nav-list").getByRole("button", { name: "红队测试", exact: true }).click();
   await page.getByRole("button", { name: "开始红队测试" }).click();
   await expect.poll(() => requestedModel).toBe("qwen-plus");
 
@@ -39,7 +40,7 @@ test("用户可以选择模型，并在刷新后保留选择", async ({ page }) 
 
 test("launch task generates an evidence-backed listing and sends it to red-team testing", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: /上新任务/ }).click();
+  await page.locator(".nav-list").getByRole("button", { name: /上新任务/ }).click();
 
   await expect(page.getByRole("heading", { name: "创建可追溯的上新任务" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Amazon 草稿" })).toBeVisible();
@@ -47,8 +48,10 @@ test("launch task generates an evidence-backed listing and sends it to red-team 
   await expect(page.getByText("可以测试")).toBeVisible();
   await page.screenshot({ path: "test-results/screenshots/desktop-memphis-launch.png", fullPage: true });
 
-  await page.getByLabel("使用 Qwen 优化 Listing 结构").uncheck();
-  await page.getByRole("button", { name: "重新生成 Listing" }).click();
+  await page.getByLabel("使用 Qwen 优化 商品上架内容 结构").uncheck();
+  await page.getByRole("button", { name: "重新生成 商品上架内容" }).click();
+  // 等生成请求真正结束（按钮从"正在生成"恢复），再继续后续操作，避免过期响应竞态
+  await expect(page.getByRole("button", { name: "重新生成 商品上架内容" })).toBeEnabled();
   await expect(page.getByText("按可信资料生成")).toBeVisible();
 
   await page.getByLabel("销售平台").selectOption("shopify");
@@ -83,6 +86,7 @@ test("launch task generates an evidence-backed listing and sends it to red-team 
 
 test("desktop demo completes the attack, repair, and retest loop", async ({ page }) => {
   await page.goto("/");
+  await page.locator(".nav-list").getByRole("button", { name: "红队测试", exact: true }).click();
   await expect(page.getByRole("heading", { name: "柏林限时旅行收纳采购" })).toBeVisible();
   await expect(page.getByRole("button", { name: "开始红队测试" })).toBeVisible();
 
@@ -116,6 +120,7 @@ test("desktop demo completes the attack, repair, and retest loop", async ({ page
 test("mobile layout keeps the primary run controls usable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
+  await page.locator(".nav-list").getByRole("button", { name: "红队测试", exact: true }).click();
   const runButton = page.getByRole("button", { name: "开始红队测试" });
   await expect(runButton).toBeVisible();
   await expect(page.getByRole("heading", { name: "柏林限时旅行收纳采购" })).toBeVisible();
@@ -133,7 +138,7 @@ test("mobile layout keeps the primary run controls usable", async ({ page }) => 
 
 test("catalog compiler imports CSV, policy, and product imagery", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: /商品档案/ }).click();
+  await page.locator(".nav-list").getByRole("button", { name: /商品档案/ }).click();
   await expect(page.getByRole("heading", { name: "整理商品档案" })).toBeVisible();
 
   await page.getByRole("button", { name: "载入示例材料" }).click();
@@ -142,7 +147,7 @@ test("catalog compiler imports CSV, policy, and product imagery", async ({ page 
   await expect(page.getByText("1 张图片")).toBeVisible();
 
   await page.getByLabel("启用 Qwen 图文资料识别").uncheck();
-  await page.getByRole("button", { name: "生成 Product Passport" }).click();
+  await page.getByRole("button", { name: "生成 商品档案" }).click();
 
   await expect(page.getByText("3 个可用")).toBeVisible();
   await expect(page.getByText("ATLAS-CUBE-3-TEAL")).toBeVisible();
@@ -153,8 +158,10 @@ test("catalog compiler imports CSV, policy, and product imagery", async ({ page 
   await expect(page.getByRole("heading", { name: "创建可追溯的上新任务" })).toBeVisible();
   await expect(page.getByText("3 条", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Amazon 草稿" })).toBeVisible();
-  await page.getByLabel("使用 Qwen 优化 Listing 结构").uncheck();
-  await page.getByRole("button", { name: "重新生成 Listing" }).click();
+  await page.getByLabel("使用 Qwen 优化 商品上架内容 结构").uncheck();
+  await page.getByRole("button", { name: "重新生成 商品上架内容" }).click();
+  // 等生成请求真正结束（按钮从"正在生成"恢复），再继续后续操作，避免过期响应竞态
+  await expect(page.getByRole("button", { name: "重新生成 商品上架内容" })).toBeEnabled();
   await expect(page.getByText("按可信资料生成")).toBeVisible();
   await page.getByRole("button", { name: "进入红队测试" }).click();
   await expect(page.getByText("Amazon / 德国上新")).toBeVisible();
@@ -212,6 +219,10 @@ test("protocol sandbox runs live commerce endpoints through the confirmation gat
   await expect(page.getByRole("heading", { name: "协议适配测试" })).toBeVisible();
   await expect(page.getByText("5 个实时 API")).toBeVisible();
   await page.getByRole("button", { name: "开始协议测试" }).click();
+
+  await expect(page.getByRole("dialog", { name: "人工确认模拟结账" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("轮到你了：人工确认")).toBeVisible();
+  await page.getByRole("button", { name: "我确认，完成模拟结账" }).click();
 
   const waterfall = page.locator(".protocol-step-list");
   await expect(page.locator(".protocol-response-panel pre")).toContainText(

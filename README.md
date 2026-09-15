@@ -71,16 +71,6 @@ CSV / 图片 / 政策资料
 
 ![AgentShelf 完整技术架构](./docs/architecture/agent-shelf-architecture.png)
 
-```text
-目录 Agent -> 上架 Agent -> 风险 Agent -> 发布 Agent
-      |            |            |            |
-      +------------ Agent Harness -------------+
-                       |
-       Guardrail / MCP / A2A / Trace / Eval
-                       |
-              人工确认与商业沙箱
-```
-
 ### Multi-Agent 编排
 
 - **目录 Agent**读取商品事实和来源，保留冲突与未知项。

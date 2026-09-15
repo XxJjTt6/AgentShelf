@@ -106,7 +106,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json(
       {
-        error: "Listing 生成失败",
+        error: "商品上架内容 生成失败",
         detail: "上新任务参数不完整或格式有误。",
       },
       { status: 400 },

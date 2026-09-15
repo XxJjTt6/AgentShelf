@@ -57,13 +57,13 @@ function baseArtifacts(report: RunReport): ReleaseArtifact[] {
   return [
     {
       name: "product-passport-v2.json",
-      label: "商品档案（Product Passport）",
+      label: "商品档案",
       mimeType: "application/json",
       body: JSON.stringify(report.catalog, null, 2),
     },
     {
       name: "openai-product-feed.csv",
-      label: "商品 Feed",
+      label: "商品 商品数据文件",
       mimeType: "text/csv;charset=utf-8",
       body: csv(productFeed),
     },
@@ -117,7 +117,7 @@ function launchArtifacts(draft: ListingDraft): ReleaseArtifact[] {
   return [
     {
       name: `${prefix}-listing.json`,
-      label: "本地化 Listing",
+      label: "本地化商品文案",
       mimeType: "application/json",
       body: JSON.stringify(listing, null, 2),
     },

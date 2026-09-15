@@ -250,7 +250,7 @@ function buildChecks(
   const platformFormat = brief.platform === "amazon"
     ? {
         passed: searchTermBytes <= 249 && uniqueSearchTerms.size === searchTerms.length,
-        detail: `Search Terms ${searchTermBytes}/249 Bytes，且不得重复`,
+        detail: `搜索关键词 ${searchTermBytes}/249 字节，且不得重复`,
       }
     : brief.platform === "shopify"
       ? {
@@ -309,7 +309,7 @@ function buildChecks(
       label: "商品资料版本",
       passed: product.version > 0,
       severity: "warning",
-      detail: `基于 Product Passport v${product.version}`,
+      detail: `基于 商品档案 v${product.version}`,
     },
     {
       id: "required-fields",
@@ -318,7 +318,7 @@ function buildChecks(
         && searchTerms.length > 0
         && requiredAttributeLabels.every((label) => attributes.some((attribute) => attribute.label === label && attribute.value.trim())),
       severity: "blocking",
-      detail: "标题、卖点、描述、Search Terms、SKU、品类、材质和市场均需完整",
+      detail: "标题、卖点、描述、搜索关键词、SKU、品类、材质和市场均需完整",
     },
     {
       id: "locale-market",
@@ -362,7 +362,7 @@ export function generateListingDraft(
   const attributes = [
     { label: "SKU", value: product.sku, source: "商家商品表" },
     { label: "品类", value: localizedCategory(brief.language), source: "上新任务" },
-    { label: "材质", value: localizedMaterialValue(product, brief.language), source: product.evidence[0]?.label ?? "Product Passport" },
+    { label: "材质", value: localizedMaterialValue(product, brief.language), source: product.evidence[0]?.label ?? "商品档案" },
     { label: "目标市场", value: marketLabels[brief.market], source: "上新任务" },
   ];
   const checks = buildChecks(
@@ -411,7 +411,7 @@ export function applyListingDraft(catalog: ProductPassport[], draft: ListingDraf
     return {
       ...structuredClone(product),
       title: draft.title,
-      subtitle: `${platformLabels[draft.platform]} · ${marketLabels[draft.market]} · 可追溯 Listing`,
+      subtitle: `${platformLabels[draft.platform]} · ${marketLabels[draft.market]} · 可追溯 商品上架内容`,
       claims: product.claims.map((claim) => ({
         ...claim,
         text: claimsById.get(claim.id)?.text ?? claim.text,

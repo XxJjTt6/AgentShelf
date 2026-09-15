@@ -36,7 +36,7 @@ describe("commerce protocol sandbox", () => {
     expect(result.deliveryDays).toBe(3);
   });
 
-  it("requires confirmation before completing a mock checkout", () => {
+  it("requires confirmation before completing a 模拟结账", () => {
     const cart = createCart({ productId: "product-a", quantity: 1, destination: "DE" }, now);
     const blocked = checkout(
       { checkoutToken: cart.checkoutToken, confirmation: false },

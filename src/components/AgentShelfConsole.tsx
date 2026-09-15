@@ -101,6 +101,45 @@ interface AgentShelfConsoleProps {
 
 const MODEL_STORAGE_KEY = "agentshelf:selected-model";
 const MODEL_CHANGE_EVENT = "agentshelf:model-change";
+const GUIDE_STORAGE_KEY = "agentshelf:guide-dismissed";
+const GUIDE_CHANGE_EVENT = "agentshelf:guide-change";
+const RELEASE_SIGNOFF_STORAGE_PREFIX = "agentshelf:release-signoff";
+
+function subscribeToGuideDismissal(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(GUIDE_CHANGE_EVENT, onStoreChange);
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(GUIDE_CHANGE_EVENT, onStoreChange);
+  };
+}
+
+interface ReleaseSignoffRecord {
+  contentConfirmed: boolean;
+  commerceStateConfirmed: boolean;
+  confirmedAt: string | null;
+}
+
+function readReleaseSignoff(storageKey: string): ReleaseSignoffRecord {
+  const empty: ReleaseSignoffRecord = {
+    contentConfirmed: false,
+    commerceStateConfirmed: false,
+    confirmedAt: null,
+  };
+  if (typeof window === "undefined") return empty;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return empty;
+    const saved = JSON.parse(raw) as Partial<ReleaseSignoffRecord>;
+    return {
+      contentConfirmed: Boolean(saved.contentConfirmed),
+      commerceStateConfirmed: Boolean(saved.commerceStateConfirmed),
+      confirmedAt: typeof saved.confirmedAt === "string" ? saved.confirmedAt : null,
+    };
+  } catch {
+    return empty;
+  }
+}
 
 function subscribeToModelSelection(onStoreChange: () => void) {
   window.addEventListener("storage", onStoreChange);
@@ -242,7 +281,7 @@ export function AgentShelfConsole({
   repaired: initialRepaired,
   model,
 }: AgentShelfConsoleProps) {
-  const [surface, setSurface] = useState<ProductSurface>("redteam");
+  const [surface, setSurface] = useState<ProductSurface>("overview");
   const [importedCatalog, setImportedCatalog] = useState<ProductPassport[] | null>(null);
   const [launchDraft, setLaunchDraft] = useState<ListingDraft | null>(null);
   const [redTeamTargetProductId, setRedTeamTargetProductId] = useState<string | null>(null);
@@ -257,7 +296,14 @@ export function AgentShelfConsole({
   const [useModel, setUseModel] = useState(true);
   const [audit, setAudit] = useState<ModelAudit | null>(null);
   const [auditWarning, setAuditWarning] = useState<string | null>(null);
+  const [adoptedFindingIds, setAdoptedFindingIds] = useState<string[]>([]);
+  const auditCacheRef = useRef(new Map<string, { audit: ModelAudit | null; warning: string | null }>());
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const guideDismissed = useSyncExternalStore(
+    subscribeToGuideDismissal,
+    () => window.localStorage.getItem(GUIDE_STORAGE_KEY) === "1",
+    () => true,
+  );
   const selectedModel = useSyncExternalStore(
     subscribeToModelSelection,
     () => {
@@ -329,6 +375,11 @@ export function AgentShelfConsole({
     };
   }, []);
 
+  function dismissGuide() {
+    window.localStorage.setItem(GUIDE_STORAGE_KEY, "1");
+    window.dispatchEvent(new Event(GUIDE_CHANGE_EVENT));
+  }
+
   function chooseModel(nextModel: string) {
     if (!model.options.includes(nextModel)) return;
     setAudit(null);
@@ -347,8 +398,21 @@ export function AgentShelfConsole({
   async function requestAudit(runMode: RunMode) {
     setAudit(null);
     setAuditWarning(null);
+    const auditReport = runMode === "baseline" ? baseline : repaired;
+    const cacheKey = [
+      auditReport.id,
+      selectedMission.id,
+      selectedFault?.id ?? "none",
+      selectedModel,
+      useModel ? "model" : "rules",
+    ].join(":");
+    const cached = auditCacheRef.current.get(cacheKey);
+    if (cached) {
+      setAudit(cached.audit);
+      setAuditWarning(cached.warning);
+      return;
+    }
     try {
-      const auditReport = runMode === "baseline" ? baseline : repaired;
       const response = await fetch("/api/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -369,6 +433,10 @@ export function AgentShelfConsole({
       if (!response.ok) throw new Error(payload.detail || payload.error);
       setAudit(payload.audit ?? null);
       setAuditWarning(payload.warning ?? null);
+      auditCacheRef.current.set(cacheKey, {
+        audit: payload.audit ?? null,
+        warning: payload.warning ?? null,
+      });
     } catch (error) {
       setAuditWarning(error instanceof Error ? error.message : "Qwen 复核暂不可用");
     }
@@ -426,7 +494,14 @@ export function AgentShelfConsole({
     setPhase("repairing");
     setTab("findings");
     setAudit(null);
+    setAdoptedFindingIds(baseline.findings.map((finding) => finding.id));
     window.setTimeout(() => animateRun("repaired", "passed"), 1000);
+  }
+
+  function adoptFindingRepair(findingId: string) {
+    setAdoptedFindingIds((current) => (
+      current.includes(findingId) ? current : [...current, findingId]
+    ));
   }
 
   function resetDemo() {
@@ -438,6 +513,7 @@ export function AgentShelfConsole({
     setPaused(false);
     setAudit(null);
     setAuditWarning(null);
+    setAdoptedFindingIds([]);
   }
 
   function chooseMode(nextMode: RunMode) {
@@ -447,11 +523,52 @@ export function AgentShelfConsole({
     setVisibleEvents(nextMode === "baseline" ? baseline.events.length : repaired.events.length);
     setAudit(null);
     setAuditWarning(null);
+    if (nextMode === "repaired") {
+      setAdoptedFindingIds(baseline.findings.map((finding) => finding.id));
+    }
   }
 
   const displayEvents = report.events.slice(0, visibleEvents);
   const isFinished = phase === "failed" || phase === "passed";
   const showRepair = phase === "failed" && mode === "baseline";
+
+  const guideSteps: Array<{ label: string; hint: string; active: boolean; go: () => void }> = [
+    {
+      label: "商品档案",
+      hint: "整理带来源的商品资料",
+      active: surface === "compiler",
+      go: () => setSurface("compiler"),
+    },
+    {
+      label: "上新任务",
+      hint: "生成本地化上架内容",
+      active: surface === "launch",
+      go: () => setSurface("launch"),
+    },
+    {
+      label: "红队测试",
+      hint: "注入攻击，验证阻断",
+      active: surface === "redteam" && tab !== "release",
+      go: () => {
+        setSurface("redteam");
+        setTab("run");
+      },
+    },
+    {
+      label: "发布文件",
+      hint: "人工确认后导出",
+      active: surface === "redteam" && tab === "release",
+      go: () => {
+        setSurface("redteam");
+        setTab("release");
+      },
+    },
+  ];
+
+  const criticalFindingCount = report.findings.filter((finding) => finding.severity === "critical").length;
+  const runSummaryLine = phase === "failed"
+    ? `${report.findings[0]?.title ?? "发现风险"}。本轮共发现 ${report.findings.length} 个问题（${criticalFindingCount} 个严重），交易已在结账前被拦截，未产生任何支付。可在「问题与修复」中逐条采纳修复。`
+    : `修复版复测通过。此前的 ${report.findings.length} 个问题已全部修复，任务在预算、时效与证据要求内安全完成；完成两项人工确认后即可在「发布文件」导出。`;
 
   return (
     <div className="app-shell">
@@ -540,7 +657,7 @@ export function AgentShelfConsole({
             <button
               className={`nav-item ${surface === "compiler" ? "active" : ""}`}
               type="button"
-              title="商品档案（Product Passport）"
+              title="商品档案"
               onClick={() => setSurface("compiler")}
               aria-current={surface === "compiler" ? "page" : undefined}
             >
@@ -549,15 +666,32 @@ export function AgentShelfConsole({
               <span className="nav-count">{importedCatalog?.length ?? baseline.catalog.length}</span>
             </button>
             <button
-              className={`nav-item ${surface === "redteam" ? "active" : ""}`}
+              className={`nav-item ${surface === "redteam" && tab !== "release" ? "active" : ""}`}
               type="button"
               title="红队测试"
-              onClick={() => setSurface("redteam")}
-              aria-current={surface === "redteam" ? "page" : undefined}
+              onClick={() => {
+                setSurface("redteam");
+                setTab("run");
+              }}
+              aria-current={surface === "redteam" && tab !== "release" ? "page" : undefined}
             >
               <TerminalSquare size={18} aria-hidden="true" />
               <span>红队测试</span>
               <span className="live-dot" aria-hidden="true" />
+            </button>
+            <button
+              className={`nav-item ${surface === "redteam" && tab === "release" ? "active" : ""}`}
+              type="button"
+              title="发布文件"
+              onClick={() => {
+                setSurface("redteam");
+                setTab("release");
+              }}
+              aria-current={surface === "redteam" && tab === "release" ? "page" : undefined}
+            >
+              <PackageCheck size={18} aria-hidden="true" />
+              <span>发布文件</span>
+              <span className="nav-count">出</span>
             </button>
             <button
               className={`nav-item ${surface === "missions" ? "active" : ""}`}
@@ -602,12 +736,39 @@ export function AgentShelfConsole({
             </div>
             <div className="sandbox-label">
               <LockKeyhole size={13} aria-hidden="true" />
-              仅限模拟结账（Mock Checkout）
+              仅限模拟结账
             </div>
           </div>
         </aside>
 
         <main className="main-workspace">
+          {!guideDismissed && (
+            <div className="guide-banner" role="note" aria-label="首次使用引导">
+              <div className="guide-banner-copy">
+                <Sparkles size={15} aria-hidden="true" />
+                <strong>第一次来？</strong>
+                <span>按这个顺序走一遍完整流程，大约 3 分钟。</span>
+              </div>
+              <div className="guide-banner-steps">
+                {guideSteps.map((step, index) => (
+                  <button
+                    key={step.label}
+                    type="button"
+                    className={`guide-step ${step.active ? "current" : ""}`}
+                    aria-current={step.active ? "step" : undefined}
+                    title={step.hint}
+                    onClick={step.go}
+                  >
+                    <span aria-hidden="true">{index + 1}</span>
+                    {step.label}
+                  </button>
+                ))}
+              </div>
+              <button className="guide-dismiss" type="button" onClick={dismissGuide}>
+                知道了，不再显示
+              </button>
+            </div>
+          )}
           {surface === "overview" ? (
             <OverviewWorkspace
               onOpenLaunch={() => setSurface("launch")}
@@ -638,7 +799,7 @@ export function AgentShelfConsole({
                 setImportedCatalog(catalog);
                 setLaunchDraft(null);
                 setRedTeamTargetProductId(null);
-                setWorkspaceContext("导入商品 / 待生成 Listing");
+                setWorkspaceContext("导入商品 / 待生成 商品上架内容");
                 setSelectedFault(null);
                 resetDemo();
                 setSurface("launch");
@@ -687,7 +848,7 @@ export function AgentShelfConsole({
                   type="button"
                   onClick={() => chooseMode("baseline")}
                 >
-                  原始商品 Feed
+                  原始商品数据
                 </button>
                 <button
                   className={mode === "repaired" ? "selected" : ""}
@@ -734,7 +895,7 @@ export function AgentShelfConsole({
             <div className={`overall-score ${scoreTone(report.scores.overall)}`}>
               <div className="score-value">{report.scores.overall}</div>
               <div>
-                <span>Agent 可用状态</span>
+                <span>智能体 可用状态</span>
                 <strong>{mode === "baseline" ? "未通过" : "已放行"}</strong>
               </div>
             </div>
@@ -755,6 +916,15 @@ export function AgentShelfConsole({
               })}
             </div>
           </section>
+
+          {isFinished && (
+            <section className={`run-summary-banner ${phase === "failed" ? "fail" : "pass"}`} role="status">
+              {phase === "failed"
+                ? <ShieldAlert size={18} aria-hidden="true" />
+                : <ShieldCheck size={18} aria-hidden="true" />}
+              <p><strong>一句话结论：</strong>{runSummaryLine}</p>
+            </section>
+          )}
 
           <div className="workspace-tabs" role="tablist" aria-label="运行详情">
             {tabs.map((item) => {
@@ -803,6 +973,10 @@ export function AgentShelfConsole({
               repairedMode={mode === "repaired"}
               phase={phase}
               onRepair={applyRepair}
+              adoptedIds={adoptedFindingIds}
+              onAdopt={adoptFindingRepair}
+              baselineScore={baseline.scores.overall}
+              repairedScore={repaired.scores.overall}
             />
           )}
 
@@ -834,7 +1008,7 @@ function OverviewWorkspace({
 }) {
   const solutionSteps = [
     ["整理商品档案", "合并 CSV、图片和政策资料，保留来源、冲突和未知项。"],
-    ["生成本地化 Listing", "按目标市场和平台规则生成内容，每条卖点都可追溯。"],
+    ["生成本地化商品文案", "按目标市场和平台规则生成内容，每条卖点都可追溯。"],
     ["执行红队测试", "重现指令注入、价格差异、商品信息冲突和跨境政策风险。"],
     ["修复并复测", "保留原始资料，生成新版本，并用同一任务和故障重新验证。"],
     ["人工确认发布", "再次确认内容、价格、库存和配送状态，然后生成发布文件。"],
@@ -848,8 +1022,8 @@ function OverviewWorkspace({
             <span className="run-id">比赛方案总览</span>
             <span className="scope-pill"><Globe2 size={12} aria-hidden="true" /> AI 智能上新</span>
           </div>
-          <h1>跨境商品上新的 Agent 安全发布平台</h1>
-          <p>帮助跨境卖家把分散的商品资料变成可发布的 Listing，并在上线前完成规则检查、红队测试和修复复测，避免 Agent 看错、选错和买错。</p>
+          <h1>跨境商品上新的 智能体 安全发布平台</h1>
+          <p>帮助跨境卖家把分散的商品资料变成可发布的 商品上架内容，并在上线前完成规则检查、红队测试和修复复测，避免 智能体 看错、选错和买错。</p>
         </div>
         <div className="overview-actions">
           <button className="primary-button" type="button" onClick={onOpenLaunch}>
@@ -886,9 +1060,9 @@ function OverviewWorkspace({
           <div className="overview-problem-list">
             {[
               "商品资料分散，人工核对慢且容易遗漏",
-              "本地化 Listing 可能出现没有可信来源的卖点",
+              "本地化商品文案 可能出现没有可信来源的卖点",
               "展示内容与实时价格、库存和配送状态可能不一致",
-              "评论、隐藏文本和图片 OCR 可能误导购物 Agent",
+              "评论、隐藏文本和图片 OCR 可能误导购物智能体",
             ].map((item) => (
               <div key={item}><X size={13} aria-hidden="true" /><span>{item}</span></div>
             ))}
@@ -923,7 +1097,7 @@ function OverviewWorkspace({
           <div className="overview-ai-section qwen">
             <strong>Qwen 负责理解与组织</strong>
             <span>识别图片和政策信息</span>
-            <span>优化 Listing 内容结构</span>
+            <span>优化 商品上架内容 内容结构</span>
             <span>复核红队运行结果</span>
           </div>
           <div className="overview-ai-section rules">
@@ -943,9 +1117,9 @@ function OverviewWorkspace({
         <div className="overview-judge-grid">
           {[
             ["业务价值", "把上新前的资料整理、内容生成、风险测试和发布确认收敛到一个流程。"],
-            ["创新性", "不只生成 Listing，还用红队任务验证 Agent 能否看对、选对和买对。"],
+            ["创新性", "不只生成 商品上架内容，还用红队任务验证 智能体 能否看对、选对和买对。"],
             ["可行性", "已实现可运行原型、30 个任务、12 个故障、商品 API 和人工确认发布。"],
-            ["技术思路", "以 Product Passport 为统一资料源，结合信任边界、版本管理、签名购物车和模拟结账。"],
+            ["技术思路", "以 商品档案 为统一资料源，结合信任边界、版本管理、签名购物车和模拟结账。"],
           ].map(([title, detail], index) => (
             <div key={title}>
               <span>{String(index + 1).padStart(2, "0")}</span>
@@ -981,6 +1155,8 @@ function LaunchWorkspace({
   const [useModel, setUseModel] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generationWarning, setGenerationWarning] = useState<string | null>(null);
+  // v23：生成请求序号。切换商品/平台/市场会使在途请求失效，避免过期响应覆盖新草稿。
+  const generationRunRef = useRef(0);
   const [draft, setDraft] = useState<ListingDraft>(() =>
     generateListingDraft(firstProduct, {
       productId: firstProduct.id,
@@ -1000,6 +1176,8 @@ function LaunchWorkspace({
   };
 
   async function generateDraft() {
+    const runId = generationRunRef.current + 1;
+    generationRunRef.current = runId;
     setGenerating(true);
     setGenerationWarning(null);
     try {
@@ -1022,22 +1200,26 @@ function LaunchWorkspace({
         detail?: string;
       };
       if (!response.ok || !payload.draft) {
-        throw new Error(payload.detail ?? payload.error ?? "Listing 生成接口未返回草稿");
+        throw new Error(payload.detail ?? payload.error ?? "商品上架内容 生成接口未返回草稿");
       }
+      if (runId !== generationRunRef.current) return;
       setDraft(payload.draft);
       setGenerationWarning(payload.warning ?? null);
     } catch {
+      if (runId !== generationRunRef.current) return;
       setDraft(generateListingDraft(selectedProduct, brief));
       setGenerationWarning(
         "生成接口暂不可用，已改用可信资料规则。",
       );
     } finally {
-      setGenerating(false);
+      if (runId === generationRunRef.current) setGenerating(false);
     }
   }
 
   function updateProduct(nextProductId: string) {
     const product = sourceCatalog.find((item) => item.id === nextProductId) ?? firstProduct;
+    generationRunRef.current += 1;
+    setGenerating(false);
     setProductId(nextProductId);
     setDraft(generateListingDraft(product, {
       ...brief,
@@ -1047,12 +1229,16 @@ function LaunchWorkspace({
   }
 
   function updatePlatform(nextPlatform: LaunchPlatform) {
+    generationRunRef.current += 1;
+    setGenerating(false);
     setPlatform(nextPlatform);
     setDraft(generateListingDraft(selectedProduct, { ...brief, platform: nextPlatform }));
   }
 
   function updateMarket(nextMarket: LaunchMarket) {
     const language = nextMarket === "DE" ? "de-DE" : "en-US";
+    generationRunRef.current += 1;
+    setGenerating(false);
     setMarket(nextMarket);
     setDraft(generateListingDraft(selectedProduct, { ...brief, market: nextMarket, language }));
   }
@@ -1073,11 +1259,11 @@ function LaunchWorkspace({
             </span>
           </div>
           <h1>创建可追溯的上新任务</h1>
-          <p>选择商品、销售平台和目标市场。系统会生成本地化 Listing，标明每条卖点的来源，并在红队测试前检查平台规则。</p>
+          <p>选择商品、销售平台和目标市场。系统会生成本地化商品文案，标明每条卖点的来源，并在红队测试前检查平台规则。</p>
         </div>
         <button className="primary-button" type="button" onClick={generateDraft} disabled={generating}>
           {generating ? <RefreshCw className="spin" size={16} aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
-          {generating ? "正在生成 Listing" : "重新生成 Listing"}
+          {generating ? "正在生成 商品上架内容" : "重新生成 商品上架内容"}
         </button>
       </section>
 
@@ -1085,7 +1271,7 @@ function LaunchWorkspace({
         {[
           ["01", "任务配置", "done"],
           ["02", "确认商品信息", "done"],
-          ["03", "生成 Listing", "active"],
+          ["03", "生成 商品上架内容", "active"],
           ["04", "红队测试", "pending"],
           ["05", "修复并发布", "pending"],
         ].map(([index, label, status]) => (
@@ -1140,10 +1326,10 @@ function LaunchWorkspace({
               checked={useModel}
               onChange={(event) => setUseModel(event.target.checked)}
             />
-            <span>使用 Qwen 优化 Listing 结构</span>
+            <span>使用 Qwen 优化 商品上架内容 结构</span>
           </label>
           <span className={model.configured ? "ready" : "fallback"}>
-            {model.configured ? `${model.name} 已连接` : "未配置模型时自动使用规则生成"}
+            {model.configured ? `${model.name} 已配置` : "未配置模型时自动使用规则生成"}
           </span>
         </div>
         {generationWarning && (
@@ -1187,7 +1373,7 @@ function LaunchWorkspace({
         <section className="tool-panel listing-draft-panel">
           <div className="panel-heading">
             <div>
-              <span className="panel-kicker">本地化 Listing</span>
+              <span className="panel-kicker">本地化商品文案</span>
               <h2>{platformLabels[draft.platform]} 草稿</h2>
               <small className="listing-generation-mode">
                 {draft.generation.mode === "qwen-assisted"
@@ -1215,7 +1401,7 @@ function LaunchWorkspace({
               <p>{draft.description}</p>
             </div>
             <div className="listing-field search-term-field">
-              <div><span>Search Terms</span><code>去重后</code></div>
+              <div><span>搜索关键词</span><code>去重后</code></div>
               <div>{draft.searchTerms.map((term) => <span key={term}>{term}</span>)}</div>
             </div>
           </div>
@@ -1224,7 +1410,12 @@ function LaunchWorkspace({
         <aside className="tool-panel launch-audit-panel">
           <div className="panel-heading">
             <div><span className="panel-kicker">发布前检查</span><h2>平台规则与资料来源</h2></div>
-            <strong className={draft.score >= 90 ? "pass" : "fail"}>{draft.score}</strong>
+            <strong
+              className={draft.score >= 90 ? "pass" : "fail"}
+              title="预检得分（满分 100）"
+            >
+              {draft.score}<em className="score-unit">分</em>
+            </strong>
           </div>
           <div className="launch-check-list">
             {draft.checks.map((check) => (
@@ -1284,7 +1475,7 @@ const protocolSpecs: Record<ProtocolName, {
 }> = {
   UCP: {
     title: "Universal Commerce Protocol",
-    description: "让商品搜索、购物车和结账共用同一份 Product Passport。",
+    description: "让商品搜索、购物车和结账共用同一份 商品档案。",
     mappings: [
       { capability: "product.discovery", adapter: "search", status: "ready" },
       { capability: "shipping.quote", adapter: "shipping", status: "ready" },
@@ -1293,7 +1484,7 @@ const protocolSpecs: Record<ProtocolName, {
   },
   ACP: {
     title: "Agentic Commerce Protocol",
-    description: "为 Agent 购买流程提供结构化商品资料、实时价格库存和模拟交易结果。",
+    description: "为 智能体 购买流程提供结构化商品资料、实时价格库存和模拟交易结果。",
     mappings: [
       { capability: "product_search", adapter: "search", status: "ready" },
       { capability: "create_cart", adapter: "签名报价", status: "ready" },
@@ -1335,6 +1526,12 @@ function ProtocolWorkspace() {
   const [steps, setSteps] = useState<ProtocolStep[]>(freshProtocolSteps);
   const [running, setRunning] = useState(false);
   const [responsePreview, setResponsePreview] = useState<Record<string, unknown> | null>(null);
+  const [pendingCheckout, setPendingCheckout] = useState<{
+    token: string;
+    title: string | null;
+    total: number | null;
+    currency: string | null;
+  } | null>(null);
   const spec = protocolSpecs[protocol];
 
   function patchStep(index: number, patch: Partial<ProtocolStep>) {
@@ -1372,6 +1569,7 @@ function ProtocolWorkspace() {
     setRunning(true);
     setSteps(freshProtocolSteps());
     setResponsePreview(null);
+    setPendingCheckout(null);
     try {
       const search = await invoke(0, "/api/commerce/search?q=Atlas&destination=DE&budget=35");
       const products = search.products as Array<{ id: string }> | undefined;
@@ -1393,10 +1591,36 @@ function ProtocolWorkspace() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ checkoutToken, confirmation: false }),
       }, true);
+
+      const cartLines = cart.lines as Array<{ title?: string }> | undefined;
+      const cartTotals = cart.totals as { total?: number; currency?: string } | undefined;
+      patchStep(5, { status: "idle", detail: "等待人工确认——智能体无法替你完成这一步" });
+      setPendingCheckout({
+        token: checkoutToken,
+        title: cartLines?.[0]?.title ?? null,
+        total: typeof cartTotals?.total === "number" ? cartTotals.total : null,
+        currency: typeof cartTotals?.currency === "string" ? cartTotals.currency : "USD",
+      });
+    } catch (error) {
+      setResponsePreview({
+        status: "error",
+        detail: error instanceof Error ? error.message : "协议测试失败",
+      });
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function confirmPendingCheckout() {
+    if (!pendingCheckout) return;
+    const { token } = pendingCheckout;
+    setPendingCheckout(null);
+    setRunning(true);
+    try {
       const result = await invoke(5, "/api/commerce/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ checkoutToken, confirmation: true }),
+        body: JSON.stringify({ checkoutToken: token, confirmation: true }),
       });
       setResponsePreview(result);
     } catch (error) {
@@ -1409,6 +1633,15 @@ function ProtocolWorkspace() {
     }
   }
 
+  function cancelPendingCheckout() {
+    setPendingCheckout(null);
+    patchStep(5, { status: "blocked", detail: "你选择了暂不确认，交易保持阻断" });
+    setResponsePreview({
+      status: "blocked",
+      detail: "用户未确认，未发生任何交易，也未产生真实支付。",
+    });
+  }
+
   return (
     <div className="protocol-workspace">
       <section className="compiler-header">
@@ -1418,11 +1651,16 @@ function ProtocolWorkspace() {
             <span className="scope-pill"><Code2 size={12} aria-hidden="true" /> 5 个实时 API</span>
           </div>
           <h1>协议适配测试</h1>
-          <p>用同一份商品和交易数据测试 UCP、ACP 和 MCP。系统会验证签名报价和人工确认，防止 Agent 在未经用户同意时下单。</p>
+          <p>用同一份商品和交易数据测试 UCP、ACP 和 MCP。系统会验证签名报价和人工确认，防止 智能体 在未经用户同意时下单。</p>
         </div>
-        <button className="primary-button" type="button" onClick={runHandshake} disabled={running}>
+        <button
+          className="primary-button"
+          type="button"
+          onClick={runHandshake}
+          disabled={running || pendingCheckout !== null}
+        >
           {running ? <RefreshCw className="spin" size={15} aria-hidden="true" /> : <Play size={15} fill="currentColor" aria-hidden="true" />}
-          {running ? "正在测试协议" : "开始协议测试"}
+          {running ? "正在测试协议" : pendingCheckout ? "等待人工确认" : "开始协议测试"}
         </button>
       </section>
 
@@ -1459,7 +1697,7 @@ function ProtocolWorkspace() {
           </div>
           <div className="protocol-source-note">
             <FileJson size={17} aria-hidden="true" />
-            <div><strong>统一商品资料</strong><span>Product Passport v1，加上实时价格、库存和配送状态</span></div>
+            <div><strong>统一商品资料</strong><span>商品档案 v1，加上实时价格、库存和配送状态</span></div>
           </div>
         </section>
 
@@ -1504,6 +1742,46 @@ function ProtocolWorkspace() {
           </div>
         </aside>
       </div>
+
+      {pendingCheckout && (
+        <div className="confirm-overlay" role="presentation">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="人工确认模拟结账">
+            <div className="confirm-dialog-head">
+              <LockKeyhole size={18} aria-hidden="true" />
+              <strong>轮到你了：人工确认</strong>
+            </div>
+            <p>
+              购物智能体已完成选品、锁价和购物车创建。它刚才尝试在未经确认的情况下结账，
+              已被系统拦截（第 05 步）。接下来只有你亲手确认，模拟结账才会继续——
+              这一步智能体永远无法替你完成。
+            </p>
+            <div className="confirm-order-card">
+              <div>
+                <span>商品</span>
+                <strong>{pendingCheckout.title ?? "已锁定的购物车商品"}</strong>
+              </div>
+              <div>
+                <span>结账总额</span>
+                <strong>
+                  {pendingCheckout.total !== null
+                    ? `$${pendingCheckout.total.toFixed(2)} ${pendingCheckout.currency ?? "USD"}`
+                    : "以签名报价为准"}
+                </strong>
+              </div>
+              <small>仅模拟结账，不产生真实支付 · 签名报价 10 分钟内有效</small>
+            </div>
+            <div className="confirm-dialog-actions">
+              <button className="secondary-button" type="button" onClick={cancelPendingCheckout}>
+                先不确认
+              </button>
+              <button className="primary-button" type="button" onClick={confirmPendingCheckout}>
+                <Check size={15} aria-hidden="true" />
+                我确认，完成模拟结账
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1693,7 +1971,7 @@ function MissionLibraryWorkspace({
             <span className="scope-pill"><ClipboardCheck size={12} aria-hidden="true" /> 30 个可运行案例</span>
           </div>
           <h1>买家测试任务</h1>
-          <p>用固定的购买目标、必选条件和结账规则重复测试商品 Feed，确认每次结果一致。</p>
+          <p>用固定的购买目标、必选条件和结账规则重复测试商品 商品数据文件，确认每次结果一致。</p>
         </div>
         <button className="primary-button" type="button" onClick={() => onSelect(active)}>
           <Play size={15} fill="currentColor" aria-hidden="true" />
@@ -1876,7 +2154,7 @@ function CompilerWorkspace({
 
   async function compileCatalog() {
     if (!catalogFile) {
-      setError("请先上传商品 Catalog CSV。");
+      setError("请先上传商品 CSV 表格。");
       return;
     }
     setLoading(true);
@@ -1915,7 +2193,7 @@ function CompilerWorkspace({
             </span>
           </div>
           <h1>整理商品档案</h1>
-          <p>上传商品 CSV、图片和政策文件，生成 Product Passport，并标出信息来源、冲突和待确认内容。</p>
+          <p>上传商品 CSV、图片和政策文件，生成 商品档案，并标出信息来源、冲突和待确认内容。</p>
         </div>
         <div className="compiler-header-actions">
           <a className="secondary-link" href="/sample-catalog.csv" download>
@@ -1998,7 +2276,7 @@ function CompilerWorkspace({
             </label>
             <div>
               <strong>Qwen 图文资料识别</strong>
-              <span>{model.configured ? `${model.name} 已连接` : "模型密钥未配置"}</span>
+              <span>{model.configured ? `${model.name} 已配置` : "模型密钥未配置"}</span>
             </div>
           </div>
           <button className="primary-button compiler-button" type="button" onClick={compileCatalog} disabled={loading}>
@@ -2007,7 +2285,7 @@ function CompilerWorkspace({
             ) : (
               <UploadCloud size={16} aria-hidden="true" />
             )}
-            {loading ? "正在整理商品资料" : "生成 Product Passport"}
+            {loading ? "正在整理商品资料" : "生成 商品档案"}
           </button>
         </div>
         {error && (
@@ -2119,7 +2397,7 @@ function CompilerResult({
           <div className="fact-empty">
             <Bot size={23} aria-hidden="true" />
             <strong>CSV 商品资料已整理完成</strong>
-            <span>{result.modelWarning || "本次没有提供图片或政策材料。"}</span>
+            <span>{result.modelWarning || "本次未进行模型识别，按商品表格整理。"}</span>
           </div>
         )}
       </section>
@@ -2285,7 +2563,7 @@ function RunWorkspace({
       <section className="tool-panel trace-panel">
         <div className="panel-heading trace-heading">
           <div>
-            <span className="panel-kicker">Agent 测试过程</span>
+            <span className="panel-kicker">智能体 测试过程</span>
             <h2>交易步骤</h2>
           </div>
           <div className={`run-state ${phase}`} aria-live="polite">
@@ -2304,7 +2582,7 @@ function RunWorkspace({
             <div className="trace-ready-icon">
               <Bot size={28} aria-hidden="true" />
             </div>
-            <strong>购物 Agent 已就绪</strong>
+            <strong>购物智能体 已就绪</strong>
             <span>已加载 30 个任务、4 类故障和 UCP 模拟结账环境</span>
             <div className="trace-readiness-grid" aria-label="运行前检查">
               <div><Check size={13} aria-hidden="true" /><span>商品目录已载入</span></div>
@@ -2459,12 +2737,20 @@ function FindingsWorkspace({
   repairedMode,
   phase,
   onRepair,
+  adoptedIds,
+  onAdopt,
+  baselineScore,
+  repairedScore,
 }: {
   findings: Finding[];
   repairs: RepairAction[];
   repairedMode: boolean;
   phase: Phase;
   onRepair: () => void;
+  adoptedIds: string[];
+  onAdopt: (findingId: string) => void;
+  baselineScore: number;
+  repairedScore: number;
 }) {
   const [selectedId, setSelectedId] = useState(findings[0]?.id ?? "");
   const selectedIndex = Math.max(
@@ -2474,6 +2760,23 @@ function FindingsWorkspace({
   const selected = findings[selectedIndex];
   const repair = repairs[selectedIndex];
   const criticalCount = findings.filter((finding) => finding.severity === "critical").length;
+  const adoptedCount = repairedMode
+    ? findings.length
+    : findings.filter((finding) => adoptedIds.includes(finding.id)).length;
+  const allAdopted = adoptedCount === findings.length && findings.length > 0;
+  const projectedScore = findings.length === 0
+    ? repairedScore
+    : Math.round(baselineScore + ((repairedScore - baselineScore) * adoptedCount) / findings.length);
+  const selectedAdopted = Boolean(selected && adoptedIds.includes(selected.id));
+
+  function adoptSelected() {
+    if (!selected) return;
+    onAdopt(selected.id);
+    const next = findings.find(
+      (finding) => finding.id !== selected.id && !adoptedIds.includes(finding.id),
+    );
+    if (next) setSelectedId(next.id);
+  }
 
   return (
     <div className="findings-grid">
@@ -2488,27 +2791,31 @@ function FindingsWorkspace({
           </span>
         </div>
         <div className="finding-list">
-          {findings.map((finding) => (
-            <button
-              className={`finding-item ${selectedId === finding.id ? "selected" : ""}`}
-              key={finding.id}
-              type="button"
-              onClick={() => setSelectedId(finding.id)}
-            >
-              <span className={`severity-mark ${finding.severity}`} aria-hidden="true" />
-              <span className="finding-copy">
-                <span>
-                  {finding.failureClass} · {severityLabel(finding.severity)}
+          {findings.map((finding) => {
+            const adopted = repairedMode || adoptedIds.includes(finding.id);
+            return (
+              <button
+                className={`finding-item ${selectedId === finding.id ? "selected" : ""} ${adopted && !repairedMode ? "adopted" : ""}`}
+                key={finding.id}
+                type="button"
+                onClick={() => setSelectedId(finding.id)}
+              >
+                <span className={`severity-mark ${finding.severity}`} aria-hidden="true" />
+                <span className="finding-copy">
+                  <span>
+                    {finding.failureClass} · {severityLabel(finding.severity)}
+                    {adopted && !repairedMode ? " · 已采纳" : ""}
+                  </span>
+                  <strong>{finding.title}</strong>
                 </span>
-                <strong>{finding.title}</strong>
-              </span>
-              {repairedMode ? (
-                <CheckCircle2 size={16} aria-hidden="true" />
-              ) : (
-                <ArrowRight size={16} aria-hidden="true" />
-              )}
-            </button>
-          ))}
+                {adopted ? (
+                  <CheckCircle2 size={16} aria-hidden="true" />
+                ) : (
+                  <ArrowRight size={16} aria-hidden="true" />
+                )}
+              </button>
+            );
+          })}
         </div>
       </section>
 
@@ -2555,9 +2862,26 @@ function FindingsWorkspace({
         )}
 
         {!repairedMode && phase !== "repairing" && (
-          <button className="primary-button repair detail-action" type="button" onClick={onRepair}>
+          selectedAdopted ? (
+            <div className="adopted-chip" role="status">
+              <CheckCircle2 size={15} aria-hidden="true" />
+              这条修复已采纳，将包含在修复版 v2 中
+            </div>
+          ) : (
+            <button className="secondary-button detail-action" type="button" onClick={adoptSelected}>
+              <Wrench size={16} aria-hidden="true" />
+              采纳这条修复
+            </button>
+          )
+        )}
+        {!repairedMode && phase !== "repairing" && (
+          <button
+            className="primary-button repair detail-action"
+            type="button"
+            onClick={onRepair}
+          >
             <Wrench size={16} aria-hidden="true" />
-            生成全部修复并复测
+            {allAdopted ? "已采纳全部修复 · 开始复测" : "一键采纳全部并复测"}
           </button>
         )}
       </section>
@@ -2570,16 +2894,32 @@ function FindingsWorkspace({
           </div>
           <FileJson size={18} aria-hidden="true" />
         </div>
-        <div className="repair-plan-list">
-          {repairs.map((item, index) => (
-            <div className={`repair-plan-row ${repairedMode ? "done" : ""}`} key={item.id}>
-              <span>{repairedMode ? <Check size={13} /> : index + 1}</span>
-              <div>
-                <strong>{item.field}</strong>
-                <p>{item.reason}</p>
-              </div>
+        {!repairedMode && (
+          <div className="repair-progress" aria-label="修复采纳进度">
+            <div className="repair-progress-head">
+              <span>已采纳 {adoptedCount}/{findings.length}</span>
+              <strong>预计复测得分 {projectedScore}</strong>
             </div>
-          ))}
+            <div className="repair-progress-track" aria-hidden="true">
+              <span style={{ width: `${findings.length ? (adoptedCount / findings.length) * 100 : 0}%` }} />
+            </div>
+            <p>逐条采纳修复，或用下方按钮一键采纳全部。全部采纳后即可复测。</p>
+          </div>
+        )}
+        <div className="repair-plan-list">
+          {repairs.map((item, index) => {
+            const finding = findings[index];
+            const adopted = repairedMode || Boolean(finding && adoptedIds.includes(finding.id));
+            return (
+              <div className={`repair-plan-row ${adopted ? "done" : ""}`} key={item.id}>
+                <span>{adopted ? <Check size={13} /> : index + 1}</span>
+                <div>
+                  <strong>{item.field}</strong>
+                  <p>{item.reason}</p>
+                </div>
+              </div>
+            );
+          })}
         </div>
         <div className="version-box">
           <span>输出版本</span>
@@ -2602,9 +2942,27 @@ function ReleaseWorkspace({
   launchDraft: ListingDraft | null;
   regressionSourceCatalog: ProductPassport[];
 }) {
-  const [contentConfirmed, setContentConfirmed] = useState(false);
-  const [commerceStateConfirmed, setCommerceStateConfirmed] = useState(false);
-  const [confirmedAt, setConfirmedAt] = useState<string | null>(null);
+  const signoffStorageKey = `${RELEASE_SIGNOFF_STORAGE_PREFIX}:${report.id}:${launchDraft?.id ?? "generic"}`;
+  const [contentConfirmed, setContentConfirmed] = useState(
+    () => readReleaseSignoff(signoffStorageKey).contentConfirmed,
+  );
+  const [commerceStateConfirmed, setCommerceStateConfirmed] = useState(
+    () => readReleaseSignoff(signoffStorageKey).commerceStateConfirmed,
+  );
+  const [confirmedAt, setConfirmedAt] = useState<string | null>(
+    () => readReleaseSignoff(signoffStorageKey).confirmedAt,
+  );
+
+  function persistSignoff(content: boolean, commerce: boolean, at: string | null) {
+    try {
+      window.localStorage.setItem(
+        signoffStorageKey,
+        JSON.stringify({ contentConfirmed: content, commerceStateConfirmed: commerce, confirmedAt: at }),
+      );
+    } catch {
+      // 本地存储不可用时不阻断流程
+    }
+  }
   const regression = useMemo(
     () => runMissionRegression(regressionSourceCatalog, report.mode),
     [regressionSourceCatalog, report.mode],
@@ -2628,7 +2986,7 @@ function ReleaseWorkspace({
         <div className={`release-seal ${releaseReady ? "released" : "locked"}`}>
           {releaseReady ? <ShieldCheck size={36} /> : <LockKeyhole size={36} />}
         </div>
-        <span className="panel-kicker">Agent 发布准备</span>
+        <span className="panel-kicker">智能体 发布准备</span>
         <h2>
           {releaseReady
             ? "修复版本已通过发布检查"
@@ -2641,7 +2999,7 @@ function ReleaseWorkspace({
             ? "复测和人工确认都已完成，系统已生成新的发布文件。"
             : released
               ? "同一任务复测已通过。核对商品内容、实时价格、库存和配送状态后，即可下载发布文件。"
-            : "原始商品 Feed 未通过攻击防护、信息来源和交易金额检查。"}
+            : "原始商品数据未通过攻击防护、信息来源和交易金额检查。"}
         </p>
         <div className="release-score-row">
           <div>
@@ -2664,7 +3022,7 @@ function ReleaseWorkspace({
               <strong>{platformLabels[launchDraft.platform]} / {marketLabels[launchDraft.market]}</strong>
             </div>
             <div>
-              <span>Listing 版本</span>
+              <span>商品上架内容 版本</span>
               <strong>v{launchDraft.sourceVersion} → v{launchDraft.outputVersion}</strong>
             </div>
             <div>
@@ -2697,8 +3055,10 @@ function ReleaseWorkspace({
                 disabled={!released}
                 onChange={(event) => {
                   const checked = event.target.checked;
+                  const at = checked && commerceStateConfirmed ? new Date().toISOString() : null;
                   setContentConfirmed(checked);
-                  setConfirmedAt(checked && commerceStateConfirmed ? new Date().toISOString() : null);
+                  setConfirmedAt(at);
+                  persistSignoff(checked, commerceStateConfirmed, at);
                 }}
               />
               <span>我已核对商品内容与目标市场</span>
@@ -2710,12 +3070,27 @@ function ReleaseWorkspace({
                 disabled={!released}
                 onChange={(event) => {
                   const checked = event.target.checked;
+                  const at = checked && contentConfirmed ? new Date().toISOString() : null;
                   setCommerceStateConfirmed(checked);
-                  setConfirmedAt(checked && contentConfirmed ? new Date().toISOString() : null);
+                  setConfirmedAt(at);
+                  persistSignoff(contentConfirmed, checked, at);
                 }}
               />
               <span>我已确认价格、库存和配送状态</span>
             </label>
+            {!released ? (
+              <p className="signoff-hint locked">
+                人工确认在修复版复测通过后开放：请先在「红队测试」中完成「生成修复并复测」。
+              </p>
+            ) : !releaseReady ? (
+              <p className="signoff-hint">
+                勾选上面两项后，下方文件的下载按钮才会解锁——发布授权只能由人完成，确认记录会写入 release-approval.json。
+              </p>
+            ) : (
+              <p className="signoff-hint done">
+                已于 {confirmedAt ? new Date(confirmedAt).toLocaleString("zh-CN") : "本次会话"} 完成确认，确认记录已写入 release-approval.json，刷新页面后仍会保留。
+              </p>
+            )}
           </div>
           {artifacts.map((artifact) => (
             <div className="artifact-row" key={artifact.name}>
@@ -2729,7 +3104,7 @@ function ReleaseWorkspace({
               <button
                 className="icon-button"
                 type="button"
-                title={`下载 ${artifact.name}`}
+                title={releaseReady ? `下载 ${artifact.name}` : "完成上方两项人工确认后可下载"}
                 disabled={!releaseReady}
                 onClick={() => downloadReleaseArtifact(artifact)}
               >

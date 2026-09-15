@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const surfaces = [
-  { nav: /^方案总览/, heading: "跨境商品上新的 Agent 安全发布平台" },
+  { nav: /^方案总览/, heading: "跨境商品上新的 智能体 安全发布平台" },
   { nav: /^上新任务/, heading: "创建可追溯的上新任务" },
   { nav: /^红队测试$/, heading: "柏林限时旅行收纳采购" },
   { nav: /^商品档案/, heading: "整理商品档案" },
@@ -50,7 +50,7 @@ test("all seven workspaces remain non-overlapping across desktop, tablet, and mo
     await page.setViewportSize(viewport);
     await page.goto("/");
     for (const surface of surfaces) {
-      await page.getByRole("button", { name: surface.nav }).click();
+      await page.locator(".nav-list").getByRole("button", { name: surface.nav }).click();
       await expect(page.getByRole("heading", { name: surface.heading })).toBeVisible();
       await expectStableLayout(page);
     }
